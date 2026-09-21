@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Document Checklist Portal</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,Arial;background:#f4f7fb;color:#18212f}
+header{background:#172554;color:white;padding:18px 22px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+header h1{font-size:20px;margin:0}.wrap{max-width:1100px;margin:auto;padding:20px}
+nav{display:flex;gap:8px}button{border:0;border-radius:9px;padding:10px 14px;cursor:pointer;font-weight:600}
+.primary{background:#2563eb;color:white}.secondary{background:#e8eef8;color:#172554}.danger{background:#fee2e2;color:#991b1b}
+.card{background:white;border:1px solid #e2e8f0;border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:0 3px 12px #00000008}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+input,select,textarea{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;background:white}
+label{display:block;font-size:13px;font-weight:700;margin:8px 0 6px}.muted{color:#64748b;font-size:13px}
+.service{padding:14px;border:1px solid #dbe3ef;border-radius:10px;cursor:pointer}.service:hover{border-color:#2563eb;background:#eff6ff}
+.hidden{display:none}.doc{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #edf2f7}.doc input{width:auto}.doc small{margin-left:auto;color:#64748b}
+.progress{height:10px;background:#e5e7eb;border-radius:10px;overflow:hidden}.bar{height:100%;background:#2563eb;width:0}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;vertical-align:top}
+.badge{font-size:11px;padding:4px 7px;border-radius:20px;background:#e0f2fe;color:#075985}.actions{display:flex;gap:6px;flex-wrap:wrap}
+@media(max-width:650px){header{align-items:flex-start;flex-direction:column}.wrap{padding:12px}}
+@media print{
+  @page{size:A4;margin:12mm}
+  body{background:white;font-size:12px}
+  body *{visibility:hidden}
+  #checklist,#checklist *{visibility:visible}
+  #checklist{position:absolute;left:0;top:0;width:100%;margin:0;padding:0;border:0;box-shadow:none}
+  #checklist .no-print,#checklist .progress,#checklist #count{display:none!important}
+  #checklist h2{font-size:18px;margin:0 0 8px}
+  #checklist>p{font-size:11px;margin:0 0 12px}
+  #docs{border:1px solid #111}
+  #docs .doc{display:grid;grid-template-columns:34px 1fr 130px;padding:9px 10px;border-bottom:1px solid #999;break-inside:avoid}
+  #docs .doc:last-child{border-bottom:0}
+  #docs .doc input{display:none}
+  #docs .doc:before{content:"";display:block;width:18px;height:18px;border:1px solid #111}
+  #docs .doc small{margin-left:0;color:#111}
+}
+
+.upload-row{display:grid;grid-template-columns:1fr 170px 100px;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid #edf2f7}
+.status{font-size:12px;font-weight:700}.received{color:#15803d}.pending{color:#b91c1c}
+.template-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-top:12px}
+@media(max-width:650px){.upload-row{grid-template-columns:1fr}.upload-row button{width:max-content}}
+</style>
+</head>
+<body>
+<header>
+  <h1>📄 Document Checklist Portal</h1>
+  <nav><button class="secondary" onclick="show('home')">Portal</button><button class="secondary" onclick="show('admin')">⚙️ Admin</button></nav>
+</header>
+<div class="wrap">
+<section id="home">
+  <div class="card">
+    <h2>Find a Certificate / Service</h2>
+    <input id="search" placeholder="Search e.g. Income Certificate..." oninput="renderServices()">
+  </div>
+  <div id="services" class="grid"></div>
+  <div id="checklist" class="card hidden"></div>
+</section>
+
+<section id="admin" class="hidden">
+  <div class="card">
+    <h2>⚙️ Admin Settings</h2>
+    <p class="muted">Manage certificates and their document requirements. Data is saved in this browser.</p>
+    <div class="actions no-print">
+      <button class="primary" onclick="openCert()">+ Add Certificate</button>
+      <button class="secondary" onclick="exportData()">Export JSON</button>
+      <label class="secondary" style="display:inline-block;cursor:pointer">Import JSON <input type="file" accept=".json" hidden onchange="importData(event)"></label>
+    </div>
+  </div>
+  <div id="adminList" class="card"></div>
+</section>
+</div>
+
+<div id="modal" class="hidden" style="position:fixed;inset:0;background:#0007;padding:20px;overflow:auto">
+<div class="card" style="max-width:760px;margin:30px auto">
+<h2 id="modalTitle">Add Certificate</h2>
+<label>Certificate / Service Name</label><input id="certName">
+<label>Description / Notes</label><textarea id="certNote" rows="2"></textarea>
+<h3>Documents</h3><div id="docEditor"></div>
+<div class="actions" style="margin-top:14px">
+<button class="secondary" onclick="addDocRow()">+ Add Document</button>
+<button class="primary" onclick="saveCert()">Save</button>
+<button class="secondary" onclick="closeModal()">Cancel</button>
+</div>
+</div></div>
+
+<script>
+const KEY='documentPortalDataV1';
+const starter=[
+{name:'Income Certificate',note:'Keep original documents and photocopies as required by the concerned office.',docs:[
+['Photo','Always','Required'],['Aadhaar Card','Always','Required'],['Ration Card','Always','Required'],
+['PAN Card','Salaried','Required'],['Bank Passbook','Salaried','Required'],['Latest Salary Slip','Salaried','Required'],['IT Return','Salaried','Required'],['Family Member Details','Always','Required']
+]},
+{name:'Community Certificate',note:'',docs:[['Photo','Always','Required'],['Aadhaar Card','Always','Required'],['Ration Card','Always','Required'],['Existing Community Certificate (if any)','Always','Optional']]}
+];
+let data=JSON.parse(localStorage.getItem(KEY)||'null')||starter;
+let editing=-1;
+function persist(){localStorage.setItem(KEY,JSON.stringify(data))}
+function show(id){document.getElementById('home').classList.toggle('hidden',id!=='home');document.getElementById('admin').classList.toggle('hidden',id!=='admin');if(id==='home')renderServices();else renderAdmin()}
+function shareWhatsApp(){
+ const title=document.querySelector('#checklist h2')?.textContent||'Document Checklist';
+ const type=document.getElementById('type')?.value||'General';
+ const rows=[...document.querySelectorAll('#docs .doc')];
+ const lines=rows.map((r,i)=>{
+   const name=r.querySelector('span')?.textContent?.trim()||'';
+   const meta=r.querySelector('small')?.textContent?.trim()||'';
+   const checked=r.querySelector('input')?.checked?'✅':'⬜';
+   return `${checked} ${name}${meta?' — '+meta:''}`;
+ });
+ const customer=document.getElementById('customer')?.value?.trim();
+ let msg=`*${title}*%0AApplicant Type: ${type}`;
+ if(customer) msg+=`%0AName: ${encodeURIComponent(customer)}`;
+ msg+=`%0A%0A${lines.map(encodeURIComponent).join('%0A')}`;
+ window.open('https://wa.me/?text='+msg,'_blank');
+}
+function renderServices(){
+ const q=(document.getElementById('search').value||'').toLowerCase();
+ const el=document.getElementById('services');el.innerHTML='';
+ data.filter(x=>x.name.toLowerCase().includes(q)).forEach((x,i)=>{
+  const d=document.createElement('div');d.className='service';d.innerHTML=`<b>${esc(x.name)}</b><p class="muted">${esc(x.note||'Document checklist')}</p><span class="badge">${x.docs.length} documents</span>`;
+  d.onclick=()=>openChecklist(i);el.appendChild(d);
+ });
+ if(!el.children.length)el.innerHTML='<div class="card">No matching certificate found.</div>';
+}
+function openChecklist(i){
+ const x=data[i], el=document.getElementById('checklist');el.classList.remove('hidden');
+ el.innerHTML=`<div class="no-print"><button class="secondary" onclick="document.getElementById('checklist').classList.add('hidden')">← Back</button></div><h2>${esc(x.name)}</h2><p class="muted">${esc(x.note||'')}</p>
+ <div class="grid no-print"><div><label>Applicant Type</label><select id="type" onchange="filterDocs()"><option>General</option><option>Salaried</option><option>Self-employed</option><option>Farmer</option><option>Student</option></select></div><div><label>Customer Name</label><input id="customer" placeholder="Optional" oninput="updateCustomerTemplate()"></div></div>
+ <div id="docs"></div><div class="progress"><div id="bar" class="bar"></div></div><p id="count" class="muted"></p>
+ <div class="template-box no-print">
+   <b>💬 WhatsApp Message</b>
+   <p class="muted">Edit the message if needed, then share it with the customer.</p>
+   <textarea id="waMessage" rows="7"></textarea>
+   <button class="secondary" onclick="shareWhatsAppTemplate()">💬 Share on WhatsApp</button>
+ </div>
+ <div class="card no-print" style="margin-top:14px;padding:14px">
+   <h3 style="margin-top:0">📥 Document Uploads</h3>
+   <p class="muted">Files are stored in this browser for this checklist.</p>
+   <div id="uploads"></div>
+ </div>
+ <div class="actions no-print"><button class="primary" onclick="window.print()">🖨️ Print Table</button><button class="secondary" onclick="shareWhatsApp()">💬 WhatsApp</button><button class="secondary" onclick="clearChecks()">Clear</button></div>`;
+ filterDocs();
+}
+function filterDocs(){
+ const i=data.findIndex(x=>document.getElementById('checklist').querySelector('h2')?.textContent===x.name); if(i<0)return;
+ const type=document.getElementById('type').value, x=data[i];
+ const visible=x.docs.filter(d=>d[1]==='Always'||d[1]===type);
+ const box=document.getElementById('docs');
+ box.innerHTML=visible.map((d,j)=>`<div class="doc"><input type="checkbox" onchange="updateProgress()"><span>${esc(d[0])}</span><small>${esc(d[2])}${d[1]!=='Always'?' · '+esc(d[1]):''}</small></div>`).join('');
+ renderUploads(visible);
+ updateWhatsAppMessage(x,visible);
+ updateProgress();
+}
+function renderUploads(docs){
+ const box=document.getElementById('uploads');
+ if(!box)return;
+ box.innerHTML=docs.map((d,j)=>`<div class="upload-row">
+   <div><b>${esc(d[0])}</b><br><span id="uploadStatus${j}" class="status pending">Pending</span></div>
+   <input type="file" id="file${j}" accept="image/*,.pdf,.doc,.docx" onchange="saveUpload(${j},this.files[0])">
+   <button class="secondary" id="view${j}" onclick="viewUpload(${j})" disabled>View</button>
+ </div>`).join('');
+ loadUploadStatuses();
+}
+function uploadKey(){return 'documentUploadsV1'}
+function getUploads(){return JSON.parse(localStorage.getItem(uploadKey())||'{}')}
+function saveUploads(x){localStorage.setItem(uploadKey(),JSON.stringify(x))}
+function currentCustomerKey(){
+ const title=document.querySelector('#checklist h2')?.textContent||'';
+ const customer=document.getElementById('customer')?.value?.trim()||'';
+ return title+'|'+customer;
+}
+function saveUpload(j,file){
+ if(!file)return;
+ if(file.size>5*1024*1024){alert('Please keep files under 5 MB.');return}
+ const reader=new FileReader();
+ reader.onload=()=>{
+   const u=getUploads(), key=currentCustomerKey();
+   if(!u[key])u[key]={};
+   u[key][String(j)]={name:file.name,type:file.type,data:reader.result};
+   saveUploads(u);loadUploadStatuses();
+ };
+ reader.readAsDataURL(file);
+}
+function loadUploadStatuses(){
+ const u=getUploads()[currentCustomerKey()]||{};
+ Object.keys(u).forEach(j=>{
+   const st=document.getElementById('uploadStatus'+j), btn=document.getElementById('view'+j);
+   if(st){st.textContent='Received';st.className='status received'}
+   if(btn)btn.disabled=false;
+ });
+}
+function viewUpload(j){
+ const item=(getUploads()[currentCustomerKey()]||{})[String(j)];
+ if(!item)return;
+ const w=window.open();
+ if(item.type.startsWith('image/'))w.document.write(`<img src="${item.data}" style="max-width:100%">`);
+ else w.location.href=item.data;
+}
+function updateWhatsAppMessage(x,visible){
+ const box=document.getElementById('waMessage'); if(!box)return;
+ const customer=document.getElementById('customer')?.value?.trim()||'Customer';
+ const lines=visible.map(d=>`☐ ${d[0]}${d[2]==='Optional'?' (Optional)':''}`).join('\n');
+ box.value=`*${x.name} – Documents Required*\n\nDear ${customer}, please send the following documents:\n\n${lines}\n\nPlease send clear photos/scans of all documents.`;
+}
+function shareWhatsAppTemplate(){
+ const msg=document.getElementById('waMessage')?.value||'';
+ window.open('https://wa.me/?text='+encodeURIComponent(msg),'_blank');
+}
+function updateCustomerTemplate(){
+ const i=data.findIndex(x=>document.getElementById('checklist').querySelector('h2')?.textContent===x.name); if(i<0)return;
+ const type=document.getElementById('type').value, x=data[i];
+ updateWhatsAppMessage(x,x.docs.filter(d=>d[1]==='Always'||d[1]===type));
+}
+function updateProgress(){let a=[...document.querySelectorAll('#docs input')],n=a.filter(x=>x.checked).length;document.getElementById('bar').style.width=(a.length?n/a.length*100:0)+'%';document.getElementById('count').textContent=`${n} of ${a.length} documents collected`;}
+function clearChecks(){document.querySelectorAll('#docs input').forEach(x=>x.checked=false);updateProgress()}
+function renderAdmin(){
+ const el=document.getElementById('adminList');
+ el.innerHTML='<h3>Certificates</h3><table><thead><tr><th>Certificate</th><th>Documents</th><th>Actions</th></tr></thead><tbody>'+data.map((x,i)=>`<tr><td><b>${esc(x.name)}</b><br><span class="muted">${esc(x.note||'')}</span></td><td>${x.docs.map(d=>`<div>• ${esc(d[0])} <span class="badge">${esc(d[1])}</span></div>`).join('')}</td><td><div class="actions"><button class="secondary" onclick="openCert(${i})">Edit</button><button class="danger" onclick="deleteCert(${i})">Delete</button></div></td></tr>`).join('')+'</tbody></table>';
+}
+function openCert(i=-1){editing=i;document.getElementById('modalTitle').textContent=i<0?'Add Certificate':'Edit Certificate';document.getElementById('certName').value=i<0?'':data[i].name;document.getElementById('certNote').value=i<0?'':data[i].note||'';document.getElementById('docEditor').innerHTML='';(i<0?[['','Always','Required']]:data[i].docs).forEach(d=>addDocRow(d));document.getElementById('modal').classList.remove('hidden')}
+function addDocRow(d=['','Always','Required']){const row=document.createElement('div');row.className='grid';row.style.marginBottom='8px';row.innerHTML=`<input placeholder="Document name" value="${escAttr(d[0])}"><select><option ${d[1]==='Always'?'selected':''}>Always</option><option ${d[1]==='Salaried'?'selected':''}>Salaried</option><option ${d[1]==='Self-employed'?'selected':''}>Self-employed</option><option ${d[1]==='Farmer'?'selected':''}>Farmer</option><option ${d[1]==='Student'?'selected':''}>Student</option></select><select><option ${d[2]==='Required'?'selected':''}>Required</option><option ${d[2]==='Optional'?'selected':''}>Optional</option></select><button class="danger" onclick="this.parentElement.remove()">Remove</button>`;document.getElementById('docEditor').appendChild(row)}
+function saveCert(){const name=document.getElementById('certName').value.trim();if(!name)return alert('Enter a certificate name');const rows=[...document.querySelectorAll('#docEditor .grid')];const docs=rows.map(r=>[r.children[0].value.trim(),r.children[1].value,r.children[2].value]).filter(x=>x[0]);const obj={name,note:document.getElementById('certNote').value.trim(),docs};if(editing<0)data.push(obj);else data[editing]=obj;persist();closeModal();renderAdmin()}
+function deleteCert(i){if(confirm('Delete '+data[i].name+'?')){data.splice(i,1);persist();renderAdmin()}}
+function closeModal(){document.getElementById('modal').classList.add('hidden')}
+function exportData(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.download='document-checklist-data.json';a.click()}
+function importData(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const x=JSON.parse(r.result);if(!Array.isArray(x))throw 0;data=x;persist();renderAdmin()}catch{alert('Invalid JSON file')}};r.readAsText(f)}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function escAttr(s){return esc(s)}
+renderServices();
+</script>
+</body>
+</html>
